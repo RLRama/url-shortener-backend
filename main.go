@@ -9,7 +9,7 @@ import (
 var ctx = context.Background()
 
 func main() {
-	redisURI := "rediss://default:AVNS_3T4ZlPmnGar1bWRDsXz@redis-url-shortener-rlri.a.aivencloud.com:14949"
+	redisURI := "BLANK"
 
 	addr, err := redis.ParseURL(redisURI)
 	if err != nil {
