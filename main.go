@@ -9,7 +9,6 @@ import (
 var ctx = context.Background()
 
 func main() {
-	redisURI := "BLANK"
 
 	addr, err := redis.ParseURL(redisURI)
 	if err != nil {
