@@ -1,19 +1,17 @@
 package main
 
 import (
-	"context"
-	"github.com/go-redis/redis/v8"
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	"log"
 	"os"
 )
 
-var ctx = context.Background()
-
 func main() {
 
-	err := godotenv.Load()
-	if err != nil {
+	err3 := godotenv.Load()
+	if err3 != nil {
 		log.Fatal("Error loading .env file")
 	}
 
@@ -24,5 +22,14 @@ func main() {
 		log.Fatal(err2)
 	}
 
-	rdb := redis.NewClient(addr)
+	r := gin.Default()
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "pong",
+		})
+	})
+	err3 = r.Run()
+	if err3 != nil {
+		return
+	}
 }
