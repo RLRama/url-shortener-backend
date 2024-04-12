@@ -2,29 +2,51 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
-	"errors"
+	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"golang.org/x/crypto/bcrypt"
-	"strconv"
+	"net/http"
+	"time"
 )
 
+var rdb *redis.Client
 var ctx = context.Background()
 
-func GenerateAPIKey(redisClient *redis.Client) (*APIKey, error) {
-	apiKeyBytes, err := rand.Read(20)
-	if err != nil {
-		return nil, errors.New("failed to generate random bytes for api key")
+func ShortenURL(c *gin.Context) {
+	var requestBody URL
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
-	apiKey := base64.StdEncoding.EncodeToString(apiKeyBytes)
+	shortenedKey := generateUniqueKey()
 
-	hashedKey, err := bcrypt.GenerateFromPassword(apiKey, bcrypt.DefaultCost)
+	err := rdb.HSet(ctx, fmt.Sprint("url:%s", shortenedKey), map[string]interface{}{
+		"original_url":  requestBody.OriginalURL,
+		"creation_time": time.Now().Unix(),
+	}).Err()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"shortened_url": shortenedKey})
 }
 
+func GenerateAPIKey(c *gin.Context) {
+	var requestBody struct {
+		OwnerID string `json:"owner_id"`
+	}
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 
+		return
+	}
 
-func ValidateAPIKey(key string) (*APIKey, error) {}()  {
+	apiKey := generateUniqueKey()
 
+	err := rdb.HSet(ctx, fmt.Sprint("apikey:%s", apiKey), map[string]interface{}{
+		"owner_id": requestBody.OwnerID,
+		"api"
+	})
 }
