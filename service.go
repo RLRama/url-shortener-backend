@@ -1,52 +1,64 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	"crypto/rand"
+	"encoding/base64"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"net/http"
 	"time"
 )
 
-var rdb *redis.Client
-var ctx = context.Background()
-
-func ShortenURL(c *gin.Context) {
-	var requestBody URL
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
+func createURLHandler(c *gin.Context) {
+	var urlData URL
+	if err := c.ShouldBindJSON(&urlData); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
+
+	if urlData.OriginalURL == "" || urlData.CreatorID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing URL or Creator ID"})
 		return
 	}
 
-	shortenedKey := generateUniqueKey()
+	urlShortcode := generateURLShortcode()
 
-	err := rdb.HSet(ctx, fmt.Sprint("url:%s", shortenedKey), map[string]interface{}{
-		"original_url":  requestBody.OriginalURL,
-		"creation_time": time.Now().Unix(),
-	}).Err()
-	if err != nil {
+	urlData.CreationTime = time.Now().Unix()
+
+	key := "url:" + urlShortcode
+	fields := make(map[string]interface{})
+	fields["original_url"] = urlData.OriginalURL
+	fields["creator_id"] = urlData.CreatorID
+	fields["creation_time"] = urlData.CreationTime
+
+	if err := rdb.HSet(ctx, key, fields, urlData.OriginalURL).Err(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"shortened_url": shortenedKey})
+	c.JSON(http.StatusCreated, gin.H{"url_id": urlShortcode})
 }
 
-func GenerateAPIKey(c *gin.Context) {
-	var requestBody struct {
-		OwnerID string `json:"owner_id"`
-	}
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+func generateURLShortcode() string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-		return
+	randomBytes := make([]byte, 8)
+	if _, err := rand.Read(randomBytes); err != nil {
+		panic(err)
 	}
 
-	apiKey := generateUniqueKey()
+	shortcode := base64.URLEncoding.EncodeToString(randomBytes)
 
-	err := rdb.HSet(ctx, fmt.Sprint("apikey:%s", apiKey), map[string]interface{}{
-		"owner_id": requestBody.OwnerID,
-		"api"
-	})
+	if len(shortcode) < 10 {
+		padding := make([]byte, 10-len(shortcode))
+		shortcode += string(padding)
+	} else if len(shortcode) > 10 {
+		shortcode = shortcode[:10]
+	}
+
+	for i := range shortcode {
+		if shortcode[i] == '=' {
+			shortcode = shortcode[:i] + charset[i%len(charset):i%len(charset)+1] + shortcode[i+1:]
+		}
+	}
+
+	return shortcode
 }
