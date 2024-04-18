@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -75,32 +74,6 @@ func generateUniqueURLShortcode() (string, error) {
 	return urlShortcode, nil
 }
 
-func generateURLShortcode() string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-	randomBytes := make([]byte, 8)
-	if _, err := rand.Read(randomBytes); err != nil {
-		panic(err)
-	}
-
-	shortcode := base64.URLEncoding.EncodeToString(randomBytes)
-
-	if len(shortcode) < 10 {
-		padding := make([]byte, 10-len(shortcode))
-		shortcode += string(padding)
-	} else if len(shortcode) > 10 {
-		shortcode = shortcode[:10]
-	}
-
-	for i := range shortcode {
-		if shortcode[i] == '=' {
-			shortcode = shortcode[:i] + charset[i%len(charset):i%len(charset)+1] + shortcode[i+1:]
-		}
-	}
-
-	return shortcode
-}
-
 // Auth functions
 
 func authMiddleware(c *gin.Context) {
@@ -151,10 +124,29 @@ func getUserIDByAPIKey(apiKey string) (string, error) {
 
 // User functions
 
-func registerUser(username string) (string, error) {
+func registerUserHandler(c *gin.Context) {
+	var newUser User
+	var err error
+
+	if err := c.ShouldBindJSON(&newUser); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, apiKey, err := registerUser(newUser.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"user": userID, "apiKey": apiKey})
+
+}
+
+func registerUser(username string) (string, string, error) {
 	userID, err := generateUserID()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	newUser := User{
@@ -165,30 +157,31 @@ func registerUser(username string) (string, error) {
 
 	userKey := "user:" + userID
 
-	if err := rdb.HSet(ctx, userKey, map[string]interface{}{
+	if err2 := rdb.HSet(ctx, userKey, map[string]interface{}{
 		"username":      newUser.Username,
 		"creation_time": newUser.CreationTime,
-	}).Err(); err != nil {
-		return "", err
+	}).Err(); err2 != nil {
+		return "", "", err2
 	}
 
 	apiKey, err := generateAPIKey()
 	if err != nil {
 		rdb.Del(ctx, userKey)
-		return "", err
+		return "", "", err
 	}
 
 	apiKeyKey := "apiKey:" + apiKey
 
-	if err := rdb.HSet(ctx, apiKeyKey, map[string]interface{}{
+	if err2 := rdb.HSet(ctx, apiKeyKey, map[string]interface{}{
 		"user_id":       userID,
 		"creation_time": time.Now().Unix(),
-	}).Err(); err != nil {
+	}).Err(); err2 != nil {
 		rdb.Del(ctx, userKey)
-		return "", err
+		rdb.Del(ctx, apiKeyKey)
+		return "", "", err2
 	}
 
-	return apiKey, nil
+	return userID, apiKey, nil
 }
 
 func generateUserID() (string, error) {
@@ -209,22 +202,58 @@ func generateUserID() (string, error) {
 	return userID, nil
 }
 
-// Utilities
+// API Key functions
 
-func generateRandomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	randomBytes := make([]byte, length)
-	_, err := rand.Read(randomBytes)
+func getOrCreateAPIKeyForUserHandler(c *gin.Context) {
+	var requestData struct {
+		UserID         string `json:"user_id"`
+		ProvidedAPIKey string `json:"api_key"`
+	}
+
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	apiKey, err := getOrCreateAPIKeyForUser(requestData.UserID, requestData.ProvidedAPIKey)
 	if err != nil {
-		return ""
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	for i := range randomBytes {
-		randomBytes[i] = charset[int(randomBytes[i])%len(charset)]
-	}
-	return string(randomBytes)
+
+	c.JSON(http.StatusCreated, gin.H{"api_key": apiKey})
 }
 
-// API Key functions
+func getOrCreateAPIKeyForUser(userID, providedAPIKey string) (string, error) {
+	existingUserID, err := rdb.HGet(ctx, "apikey:"+providedAPIKey, "user_id").Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return "", err
+	}
+
+	if existingUserID != "" && existingUserID != userID {
+		return "", errors.New("invalid API key")
+	}
+
+	if existingUserID == "" {
+		return providedAPIKey, nil
+	}
+
+	newAPIKey, err := generateAPIKey()
+	if err != nil {
+		return "", err
+	}
+
+	apiKeyKey := "apiKey:" + newAPIKey
+	if err := rdb.HSet(ctx, apiKeyKey, map[string]interface{}{
+		"user_id":       userID,
+		"creation_time": time.Now().Unix(),
+	}).Err(); err != nil {
+		return "", err
+	}
+
+	return newAPIKey, nil
+
+}
 
 func generateAPIKey() (string, error) {
 
@@ -248,10 +277,25 @@ func generateAPIKey() (string, error) {
 	return apiKey, nil
 }
 
-func getOrCreateAPIKeyForUser(userID, providedAPIKey string) (string, error) {
-	existingUserID, err := rdb.HGet(ctx, "apikey:"+providedAPIKey, "user_id").Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return "", err
-	}
+// Login functions
 
+func loginHandler(c *gin.Context) {
+	var loginData struct {
+		Username string `json:"username"`
+	}
+}
+
+// Utilities
+
+func generateRandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	randomBytes := make([]byte, length)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		return ""
+	}
+	for i := range randomBytes {
+		randomBytes[i] = charset[int(randomBytes[i])%len(charset)]
+	}
+	return string(randomBytes)
 }

@@ -33,6 +33,10 @@ func init() {
 func main() {
 	r := gin.Default()
 
+	r.POST("/register", registerUserHandler)
+	r.POST("/api-key", getOrCreateAPIKeyForUserHandler)
+	r.POST("/login", loginHandler)
+
 	r.Use(authMiddleware)
 
 	r.POST("/url", createURLHandler)
