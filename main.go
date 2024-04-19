@@ -30,16 +30,25 @@ func init() {
 
 }
 
-func main() {
+func setupRouter() *gin.Engine {
 	r := gin.Default()
 
-	r.POST("/register", registerUserHandler)
-	r.POST("/api-key", getOrCreateAPIKeyForUserHandler)
-	r.POST("/login", loginHandler)
+	r.Use(ErrorHandlingMiddleware())
+	r.Use(RateLimitMiddleware(1, 1))
+	r.Use(RequestLoggingMiddleware())
 
-	r.Use(authMiddleware)
+	userGroup := r.Group("/user")
+	{
+		userGroup.POST("/register", RegisterUserHandler)
+	}
 
-	r.POST("/url", createURLHandler)
+	return r
+
+}
+
+func main() {
+
+	r := setupRouter()
 
 	err := r.Run(":8080")
 	if err != nil {
