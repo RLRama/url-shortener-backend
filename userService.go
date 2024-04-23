@@ -42,6 +42,11 @@ func RegisterUserHandler(c *gin.Context) {
 
 }
 
+func UserProfileHandler(c *gin.Context) {
+	user, _ := c.Get("user")
+	authUser := user.(*User)
+}
+
 func UsernameExists(username string) (bool, error) {
 	keys, err := rdb.Keys(ctx, "user:*").Result()
 	if err != nil {

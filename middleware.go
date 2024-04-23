@@ -62,23 +62,20 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		claims, err := ValidateToken(tokenString)
+		user, err := ValidateToken(tokenString)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			c.Abort()
 			return
 		}
 
-		username, ok := claims["username"].(string)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
-			c.Abort()
-			return
-		}
+		c.Set("user", user)
+
+		c.Next()
 	}
 }
 
-func ValidateToken(tokenString string) (jwt.MapClaims, error) {
+func ValidateToken(tokenString string) (*User, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
@@ -105,7 +102,12 @@ func ValidateToken(tokenString string) (jwt.MapClaims, error) {
 		return nil, errors.New("username not found in token claims")
 	}
 
-	return claims, nil
+	user, err := FindUserByUsername(username)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }
 
 func FindUserByUsername(username string) (*User, error) {
