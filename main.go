@@ -37,10 +37,14 @@ func setupRouter() *gin.Engine {
 	r.Use(RateLimitMiddleware(1, 1))
 	r.Use(RequestLoggingMiddleware())
 
-	userGroup := r.Group("/user")
-	{
-		userGroup.POST("/register", RegisterUserHandler)
-	}
+	r.POST("/register", RegisterUserHandler)
+	r.POST("/login", LoginHandler)
+
+	authUserGroup := r.Group("/user")
+	authUserGroup.Use(AuthMiddleware())
+
+	authUserGroup.PUT("/update-username", UpdateUsernameHandler)
+	authUserGroup.GET("/profile", UserProfileHandler)
 
 	return r
 

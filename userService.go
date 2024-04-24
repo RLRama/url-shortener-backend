@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
+	"strings"
+	"time"
 )
 
 func RegisterUserHandler(c *gin.Context) {
@@ -45,6 +48,89 @@ func RegisterUserHandler(c *gin.Context) {
 func UserProfileHandler(c *gin.Context) {
 	user, _ := c.Get("user")
 	authUser := user.(*User)
+
+	c.JSON(http.StatusOK, gin.H{
+		"username": authUser.Username,
+	})
+}
+
+func UpdateUsernameHandler(c *gin.Context) {
+	user, _ := c.Get("user")
+	authUser := user.(*User)
+
+	var updatedUsername struct {
+		Username string `json:"username"`
+	}
+
+	if err := c.ShouldBind(&updatedUsername); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if updatedUsername.Username != "" && updatedUsername.Username != authUser.Username {
+		exists, err := UsernameExists(updatedUsername.Username)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Username already exists"})
+			return
+		}
+	}
+
+	if len(updatedUsername.Username) < 3 || len(updatedUsername.Username) > 20 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Username length must be between 3 and 20"})
+		return
+	}
+
+	userID := strings.Split(authUser.Username, ":")[1]
+
+	if err := UpdateUsernameInRedis(userID, updatedUsername.Username); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	authUser.Username = updatedUsername.Username
+
+	c.JSON(http.StatusOK, gin.H{"message": "Username updated", "username": authUser.Username})
+
+}
+
+func LoginHandler(c *gin.Context) {
+	var user User
+	if err := c.ShouldBind(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dbUser, err := FindUserByUsername(user.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if dbUser == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid username or password"})
+		return
+	}
+
+	if !ComparePasswords(dbUser.Password, user.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid username or password"})
+		return
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": dbUser.Username,
+		"exp":      time.Now().Add(time.Hour * 12).Unix(),
+	})
+
+	tokenString, err := token.SignedString([]byte("secret"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": tokenString})
 }
 
 func UsernameExists(username string) (bool, error) {
@@ -86,4 +172,29 @@ func HashPassword(password string) (string, error) {
 		return "", err
 	}
 	return string(hashedPassword), nil
+}
+
+func UpdateUsernameInRedis(userID string, newUsername string) error {
+	userKey := fmt.Sprintf("user:%d", userID)
+
+	exists, err := rdb.Exists(ctx, userKey).Result()
+	if err != nil {
+		return err
+	}
+
+	if exists == 0 {
+		return fmt.Errorf("user with ID %s does not exist", userID)
+	}
+
+	if err := rdb.HSet(ctx, userKey, "username", newUsername).Err(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ComparePasswords(hashedPassword string, plainPassword string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(plainPassword))
+
+	return err == nil
 }

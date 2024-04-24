@@ -62,52 +62,44 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		user, err := ValidateToken(tokenString)
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+
+			return []byte("secret"), nil
+		})
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			c.Abort()
 			return
 		}
 
-		c.Set("user", user)
+		if !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.Abort()
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
+			c.Abort()
+			return
+		}
+		username, ok := claims["username"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "username not found in token claims"})
+			c.Abort()
+			return
+		}
+
+		c.Set("user", &User{
+			Username: username,
+		})
 
 		c.Next()
 	}
-}
-
-func ValidateToken(tokenString string) (*User, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
-		}
-
-		return []byte("secret"), nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	if !token.Valid {
-		return nil, errors.New("invalid token")
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return nil, errors.New("invalid token claims")
-	}
-
-	username, ok := claims["username"].(string)
-	if !ok {
-		return nil, errors.New("username not found in token claims")
-	}
-
-	user, err := FindUserByUsername(username)
-	if err != nil {
-		return nil, err
-	}
-
-	return user, nil
 }
 
 func FindUserByUsername(username string) (*User, error) {
