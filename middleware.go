@@ -7,6 +7,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -62,6 +63,16 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		tokenParts := strings.Split(tokenString, " ")
+		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
+			c.Abort()
+			return
+		}
+		tokenString = tokenParts[1]
+
+		fmt.Println("Received token: ", tokenString)
+
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -70,7 +81,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			return []byte("secret"), nil
 		})
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "token parsing error: " + err.Error()})
 			c.Abort()
 			return
 		}

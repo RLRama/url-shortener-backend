@@ -58,19 +58,32 @@ func UpdateUsernameHandler(c *gin.Context) {
 	user, _ := c.Get("user")
 	authUser := user.(*User)
 
+	userID, err := FindUserIDByUsername(authUser.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "User not found"})
+		return
+	}
+
+	fmt.Println(authUser.Username)
+	fmt.Println(user)
+
 	var updatedUsername struct {
 		Username string `json:"username"`
 	}
 
-	if err := c.ShouldBind(&updatedUsername); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err2 := c.ShouldBind(&updatedUsername); err2 != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err2.Error()})
 		return
 	}
 
 	if updatedUsername.Username != "" && updatedUsername.Username != authUser.Username {
-		exists, err := UsernameExists(updatedUsername.Username)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		exists, err2 := UsernameExists(updatedUsername.Username)
+		if err2 != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err2.Error()})
 			return
 		}
 		if exists {
@@ -84,10 +97,8 @@ func UpdateUsernameHandler(c *gin.Context) {
 		return
 	}
 
-	userID := strings.Split(authUser.Username, ":")[1]
-
-	if err := UpdateUsernameInRedis(userID, updatedUsername.Username); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err2 := UpdateUsernameInRedis(userID, updatedUsername.Username); err2 != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err2.Error()})
 		return
 	}
 
@@ -121,7 +132,7 @@ func LoginHandler(c *gin.Context) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"username": dbUser.Username,
-		"exp":      time.Now().Add(time.Hour * 12).Unix(),
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
 	})
 
 	tokenString, err := token.SignedString([]byte("secret"))
@@ -129,6 +140,8 @@ func LoginHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	fmt.Println("generated token: ", tokenString)
 
 	c.JSON(http.StatusOK, gin.H{"token": tokenString})
 }
@@ -197,4 +210,25 @@ func ComparePasswords(hashedPassword string, plainPassword string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(plainPassword))
 
 	return err == nil
+}
+
+func FindUserIDByUsername(username string) (string, error) {
+	keys, err := rdb.Keys(ctx, "user:*").Result()
+	if err != nil {
+		return "", err
+	}
+
+	for _, key := range keys {
+		user, err2 := rdb.HGetAll(ctx, key).Result()
+		if err2 != nil {
+			return "", err2
+		}
+
+		if user["username"] == username {
+			userID := strings.TrimPrefix(key, "user:")
+			return userID, nil
+		}
+	}
+
+	return "", nil
 }
