@@ -49,9 +49,17 @@ func UserProfileHandler(c *gin.Context) {
 	user, _ := c.Get("user")
 	authUser := user.(*User)
 
-	c.JSON(http.StatusOK, gin.H{
-		"username": authUser.Username,
-	})
+	dbUser, err := FindUserByUsername(authUser.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if dbUser == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user": dbUser.Username})
 }
 
 func UpdateUsernameHandler(c *gin.Context) {
@@ -59,6 +67,8 @@ func UpdateUsernameHandler(c *gin.Context) {
 	authUser := user.(*User)
 
 	userID, err := FindUserIDByUsername(authUser.Username)
+
+	fmt.Println(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -67,9 +77,6 @@ func UpdateUsernameHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "User not found"})
 		return
 	}
-
-	fmt.Println(authUser.Username)
-	fmt.Println(user)
 
 	var updatedUsername struct {
 		Username string `json:"username"`
@@ -146,6 +153,19 @@ func LoginHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": tokenString})
 }
 
+func UpdatePasswordHandler(c *gin.Context) {
+	var req UpdatePasswordRequest
+	if err := c.ShouldBind(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	authUser, _ := c.Get("user")
+	user := authUser.(*User)
+
+	db
+}
+
 func UsernameExists(username string) (bool, error) {
 	keys, err := rdb.Keys(ctx, "user:*").Result()
 	if err != nil {
@@ -188,7 +208,7 @@ func HashPassword(password string) (string, error) {
 }
 
 func UpdateUsernameInRedis(userID string, newUsername string) error {
-	userKey := fmt.Sprintf("user:%d", userID)
+	userKey := fmt.Sprintf("user:%s", userID)
 
 	exists, err := rdb.Exists(ctx, userKey).Result()
 	if err != nil {
