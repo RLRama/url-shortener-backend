@@ -44,6 +44,7 @@ func setupRouter() *gin.Engine {
 	authUserGroup.Use(AuthMiddleware())
 
 	authUserGroup.PUT("/update-username", UpdateUsernameHandler)
+	authUserGroup.PUT("/update-password", UpdatePasswordHandler)
 	authUserGroup.GET("/profile", UserProfileHandler)
 
 	return r

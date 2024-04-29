@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -162,8 +164,40 @@ func UpdatePasswordHandler(c *gin.Context) {
 
 	authUser, _ := c.Get("user")
 	user := authUser.(*User)
+	userID, err := FindUserIDByUsername(user.Username)
 
-	db
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	dbUser, err := GetUserByID(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if dbUser == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user does not exist"})
+		return
+	}
+
+	if err2 := bcrypt.CompareHashAndPassword([]byte(dbUser.Password), []byte(req.CurrentPassword)); err2 != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err2.Error()})
+		return
+	}
+
+	hashedPassword, err := HashPassword(req.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err2 := UpdatePasswordInRedis(userID, hashedPassword); err2 != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err2.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password updated"})
 }
 
 func UsernameExists(username string) (bool, error) {
@@ -200,7 +234,12 @@ func SaveUserToRedis(user User) error {
 }
 
 func HashPassword(password string) (string, error) {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	salt, err := GenerateSalt()
+	if err != nil {
+		return "", err
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password+salt), bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
 	}
@@ -220,6 +259,25 @@ func UpdateUsernameInRedis(userID string, newUsername string) error {
 	}
 
 	if err := rdb.HSet(ctx, userKey, "username", newUsername).Err(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func UpdatePasswordInRedis(userID string, newPassword string) error {
+	userKey := fmt.Sprintf("user:%s", userID)
+
+	exists, err := rdb.Exists(ctx, userKey).Result()
+	if err != nil {
+		return err
+	}
+
+	if exists == 0 {
+		return fmt.Errorf("user with ID %s does not exist", userID)
+	}
+
+	if err := rdb.HSet(ctx, userKey, "password", newPassword).Err(); err != nil {
 		return err
 	}
 
@@ -251,4 +309,33 @@ func FindUserIDByUsername(username string) (string, error) {
 	}
 
 	return "", nil
+}
+
+func GetUserByID(userID string) (*User, error) {
+	userKey := fmt.Sprintf("user:%s", userID)
+
+	userData, err := rdb.HGetAll(ctx, userKey).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(userData) == 0 {
+		return nil, nil
+	}
+
+	user := &User{
+		Username: userData["username"],
+		Password: userData["password"],
+	}
+
+	return user, nil
+}
+
+func GenerateSalt() (string, error) {
+	saltBytes := make([]byte, 16)
+	_, err := rand.Read(saltBytes)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(saltBytes), nil
 }
