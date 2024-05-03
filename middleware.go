@@ -128,6 +128,7 @@ func FindUserByUsername(username string) (*User, error) {
 			user := &User{
 				Username: userData["username"],
 				Password: userData["password"],
+				Salt:     userData["salt"],
 			}
 			return user, nil
 		}

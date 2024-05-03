@@ -1,8 +1,9 @@
 package main
 
 type User struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required,min=8"`
+	Salt     string `json:"salt"`
 }
 
 type UpdatePasswordRequest struct {

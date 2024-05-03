@@ -13,13 +13,17 @@ import (
 )
 
 func RegisterUserHandler(c *gin.Context) {
-	var newUser User
-	if err := c.ShouldBind(&newUser); err != nil {
+	var request struct {
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required,min=8"`
+	}
+
+	if err := c.ShouldBind(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	exists, err := UsernameExists(newUser.Username)
+	exists, err := UsernameExists(request.Username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -29,17 +33,27 @@ func RegisterUserHandler(c *gin.Context) {
 		return
 	}
 
-	hashedPassword, err := HashPassword(newUser.Password)
+	salt, err := GenerateSalt()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Abort()
+		return
+	}
+
+	hashedPassword, err := HashPasswordWithSalt(request.Password, salt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	newUser.Password = hashedPassword
+	newUser := User{
+		Username: request.Username,
+		Password: hashedPassword,
+		Salt:     salt,
+	}
 
-	err = SaveUserToRedis(newUser)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err2 := SaveUserToRedis(newUser); err2 != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err2.Error()})
 		return
 	}
 
@@ -118,13 +132,16 @@ func UpdateUsernameHandler(c *gin.Context) {
 }
 
 func LoginHandler(c *gin.Context) {
-	var user User
-	if err := c.ShouldBind(&user); err != nil {
+	var request struct {
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBind(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	dbUser, err := FindUserByUsername(user.Username)
+	dbUser, err := FindUserByUsername(request.Username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -134,7 +151,13 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	if !ComparePasswords(dbUser.Password, user.Password) {
+	hashedPassword, err := HashPasswordWithSalt(request.Password, dbUser.Salt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if hashedPassword != dbUser.Password {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid username or password"})
 		return
 	}
@@ -186,7 +209,14 @@ func UpdatePasswordHandler(c *gin.Context) {
 		return
 	}
 
-	hashedPassword, err := HashPassword(req.NewPassword)
+	salt, err := GenerateSalt()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Abort()
+		return
+	}
+
+	hashedPassword, err := HashPasswordWithSalt(req.NewPassword, salt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -225,7 +255,7 @@ func SaveUserToRedis(user User) error {
 		return err
 	}
 
-	_, err = rdb.HSet(ctx, fmt.Sprintf("user:%d", userID), "username", user.Username, "password", user.Password).Result()
+	_, err = rdb.HSet(ctx, fmt.Sprintf("user:%d", userID), "username", user.Username, "password", user.Password, "salt", user.Salt).Result()
 	if err != nil {
 		return err
 	}
@@ -233,12 +263,7 @@ func SaveUserToRedis(user User) error {
 	return nil
 }
 
-func HashPassword(password string) (string, error) {
-	salt, err := GenerateSalt()
-	if err != nil {
-		return "", err
-	}
-
+func HashPasswordWithSalt(password, salt string) (string, error) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password+salt), bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
@@ -282,12 +307,6 @@ func UpdatePasswordInRedis(userID string, newPassword string) error {
 	}
 
 	return nil
-}
-
-func ComparePasswords(hashedPassword string, plainPassword string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(plainPassword))
-
-	return err == nil
 }
 
 func FindUserIDByUsername(username string) (string, error) {
