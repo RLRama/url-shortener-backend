@@ -1,21 +1,30 @@
 package main
 
-import "github.com/kataras/iris/v12"
+import (
+	"context"
+	"github.com/kataras/iris/v12"
+)
+
+var ctx = context.Background()
+
+func init() {
+	connectToDatabase()
+}
 
 func main() {
+	app := newApp()
+
+	err := app.Listen(":8080")
+	if err != nil {
+		return
+	}
 }
 
 func newApp() *iris.Application {
 	app := iris.New()
 
-	app.Logger().SetLevel("debug")
-	app.Use(setAllowedResponses)
-}
+	// here go the routes
+	app.Post("/hello-world", helloWorldTest)
 
-func setAllowedResponses(ctx iris.Context) {
-
-	ctx.Negotiation().JSON().XML().YAML().MsgPack()
-	ctx.Negotiation().Accept.JSON()
-	ctx.Next()
-
+	return app
 }
