@@ -1,38 +1,34 @@
 package main
 
 import (
-	"fmt"
 	"github.com/kataras/iris/v12"
 )
 
 func helloWorldTest(ctx iris.Context) {
 	_, err := ctx.WriteString("Hello World")
 	if err != nil {
+		ctx.StopWithStatus(iris.StatusInternalServerError)
 		return
 	}
 }
 
 func redisTest(ctx iris.Context) {
-	err := rdb.Set(ctx, "key", "value", 0).Err()
+	err := rdb.Set(ctx, "key0", "dickson", 0).Err()
 	if err != nil {
-		_, err2 := ctx.WriteString(err.Error())
-		if err2 != nil {
-			return
-		}
+		ctx.StopWithError(iris.StatusInternalServerError, err)
 		return
 	}
 
-	value, err4 := rdb.Get(ctx, "key").Result()
+	value, err4 := rdb.Get(ctx, "key0").Result()
 	if err4 != nil {
-		_, err3 := ctx.WriteString(err4.Error())
-		if err3 != nil {
-			return
-		}
+		ctx.StopWithError(iris.StatusInternalServerError, err4)
 		return
 	}
 
-	_, err5 := ctx.WriteString(fmt.Sprintf("value: %s", value))
-	if err5 != nil {
+	err6 := ctx.JSON(value)
+	if err6 != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err6)
 		return
 	}
+
 }

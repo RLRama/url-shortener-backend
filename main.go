@@ -1,11 +1,8 @@
 package main
 
 import (
-	"context"
 	"github.com/kataras/iris/v12"
 )
-
-var ctx = context.Background()
 
 func init() {
 	connectToDatabase()
@@ -25,6 +22,7 @@ func newApp() *iris.Application {
 
 	// here go the routes
 	app.Post("/hello-world", helloWorldTest)
+	app.Post("/redis-test", redisTest)
 
 	return app
 }
