@@ -10,11 +10,15 @@ import (
 
 var rdb *redis.Client
 
-func connectToDatabase() *redis.Client {
-	err := godotenv.Load()
+func loadEnv() error {
+	err := godotenv.Load(".env")
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		return err
 	}
+	return nil
+}
+
+func connectToDatabase() *redis.Client {
 
 	connectionString := os.Getenv("REDIS_URI")
 
@@ -27,7 +31,12 @@ func connectToDatabase() *redis.Client {
 
 	_, err3 := rdb.Ping(context.Background()).Result()
 	if err3 != nil {
-		log.Fatal(err3)
+		panic(err3)
+	}
+
+	_, err4 := rdb.Ping(context.Background()).Result()
+	if err4 != nil {
+		log.Fatal(err4)
 	}
 
 	return rdb
