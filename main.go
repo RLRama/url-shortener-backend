@@ -8,6 +8,7 @@ import (
 
 var ctx = context.Background()
 var pepper = os.Getenv("PEPPER")
+var jwtKey = os.Getenv("JWT_SECRET")
 
 func init() {
 	err := loadEnv()
@@ -36,7 +37,7 @@ func newApp() *iris.Application {
 	// user handlers
 	user := app.Party("/user")
 	{
-		user.Post("/register", registerUserHandler)
+		user.Post("/register", handleUserRegistration)
 	}
 
 	return app

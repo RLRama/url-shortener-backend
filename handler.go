@@ -34,7 +34,7 @@ func redisTest(ctx iris.Context) {
 	}
 }
 
-func registerUserHandler(ctx iris.Context) {
+func handleUserRegistration(ctx iris.Context) {
 	var req RegisterUserRequest
 
 	if err := ctx.ReadJSON(&req); err != nil {
@@ -49,6 +49,11 @@ func registerUserHandler(ctx iris.Context) {
 	}
 
 	if err := validateFieldLength(req.Password, "password", 8, 100); err != nil {
+		ctx.StopWithError(iris.StatusBadRequest, err)
+		return
+	}
+
+	if err := validatePasswordCharTypes(req.Password); err != nil {
 		ctx.StopWithError(iris.StatusBadRequest, err)
 		return
 	}
@@ -107,4 +112,13 @@ func registerUserHandler(ctx iris.Context) {
 	if err5 != nil {
 		return
 	}
+}
+
+func handleLogin(ctx iris.Context) {
+	var req RegisterUserRequest
+	if err := ctx.ReadJSON(&req); err != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err)
+		return
+	}
+
 }
