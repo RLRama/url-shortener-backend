@@ -121,4 +121,41 @@ func handleLogin(ctx iris.Context) {
 		return
 	}
 
+	// find username and get his password
+	user, err := getUserByUsername(req.Username)
+	if err != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err)
+		return
+	}
+	if &user == nil {
+		ctx.StopWithStatus(iris.StatusNotFound)
+		_, err2 := ctx.WriteString("invalid username or password")
+		if err2 != nil {
+			return
+		}
+		return
+	}
+
+	if !verifyPassword(req.Password, user.Password) {
+		ctx.StopWithStatus(iris.StatusUnauthorized)
+		_, err2 := ctx.WriteString("invalid username or password")
+		if err2 != nil {
+			return
+		}
+		return
+	}
+
+	token, err2 := generateToken(req.Username)
+	if err2 != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err2)
+		return
+	}
+
+	ctx.StatusCode(iris.StatusOK)
+	err3 := ctx.JSON(iris.Map{
+		"token": token,
+	})
+	if err3 != nil {
+		return
+	}
 }

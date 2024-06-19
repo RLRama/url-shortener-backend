@@ -34,5 +34,5 @@ type RegisterUserRequest struct {
 // Claims Login claims struct
 type Claims struct {
 	Username string `json:"username"`
-	jwt.Claims
+	jwt.MapClaims
 }

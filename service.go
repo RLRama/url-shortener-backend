@@ -90,7 +90,7 @@ func getUserByUsername(username string) (*User, error) {
 		return nil, fmt.Errorf("error getting next user id from redis: %w", err)
 	}
 
-	for i := uint64(0); i < nextUserId; i++ {
+	for i := uint64(0); i <= nextUserId; i++ {
 		userKey := fmt.Sprintf("user:%d", i)
 		storedUsername, err2 := rdb.HGet(ctx, userKey, "username").Result()
 		if err2 != nil && !errors.Is(err2, redis.Nil) {
@@ -145,9 +145,9 @@ func verifyPassword(password, hash string) bool {
 
 func generateToken(username string) (string, error) {
 	expirationTime := time.Now().Add(30 * time.Minute)
-	claims := &Claims{
+	claims := Claims{
 		Username: username,
-		Claims: jwt.MapClaims{
+		MapClaims: jwt.MapClaims{
 			"exp": expirationTime.Unix(),
 		},
 	}
