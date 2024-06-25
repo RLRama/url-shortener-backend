@@ -50,6 +50,7 @@ func newApp() *iris.Application {
 	authenticatedUser.Use(authMiddleware)
 	{
 		// update username, password, drop user, etc
+		authenticatedUser.Put("/update-password", handleUpdatePassword)
 	}
 
 	return app

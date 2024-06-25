@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/kataras/iris/v12"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"time"
@@ -126,6 +127,20 @@ func getUserByUsername(username string) (*User, error) {
 	return nil, errors.New("user not found")
 }
 
+func getUserFromContext(ctx iris.Context) (*User, error) {
+	username := ctx.Values().GetString("username")
+	if username == "" {
+		return nil, errors.New("user not found")
+	}
+
+	user, err := getUserByUsername(username)
+	if err != nil {
+		return nil, fmt.Errorf("error getting user by username: %w", err)
+	}
+
+	return user, nil
+}
+
 func hashPassword(password string) (string, error) {
 	pepperedPass := []byte(password + pepper)
 
@@ -149,6 +164,7 @@ func generateToken(username string) (string, error) {
 		Username: username,
 		MapClaims: jwt.MapClaims{
 			"exp": expirationTime.Unix(),
+			"iat": time.Now().Unix(),
 		},
 	}
 

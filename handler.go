@@ -159,3 +159,68 @@ func handleLogin(ctx iris.Context) {
 		return
 	}
 }
+
+func handleUpdatePassword(ctx iris.Context) {
+	user, err := getUserFromContext(ctx)
+	if err != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err)
+		return
+	}
+
+	var req PasswordUpdateRequest
+	if err2 := ctx.ReadJSON(&req); err2 != nil {
+		ctx.StopWithError(iris.StatusBadRequest, err2)
+		return
+	}
+
+	if !verifyPassword(req.CurrentPassword, user.Password) {
+		ctx.StopWithStatus(iris.StatusUnauthorized)
+		_, err2 := ctx.WriteString("invalid current password")
+		if err2 != nil {
+			return
+		}
+		return
+	}
+
+	if req.CurrentPassword == req.NewPassword {
+		ctx.StopWithStatus(iris.StatusBadRequest)
+		_, err2 := ctx.WriteString("new password cannot be same as current password")
+		if err2 != nil {
+			return
+		}
+		return
+	}
+
+	// new password validation
+	if err2 := validateFieldLength(req.NewPassword, "new_password", 8, 100); err2 != nil {
+		ctx.StopWithError(iris.StatusBadRequest, err2)
+		return
+	}
+	if err2 := validatePasswordCharTypes(req.NewPassword); err2 != nil {
+		ctx.StopWithError(iris.StatusBadRequest, err2)
+		return
+	}
+
+	hashedPassword, err2 := hashPassword(req.NewPassword)
+	if err2 != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err2)
+		return
+	}
+
+	now := time.Now().UTC()
+	userKey := fmt.Sprintf("user:%d", user.ID)
+	_, err2 = rdb.HSet(ctx, userKey,
+		"password", hashedPassword,
+		"updated_at", now.Format(time.RFC3339),
+	).Result()
+	if err2 != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err2)
+		return
+	}
+
+	ctx.StatusCode(iris.StatusOK)
+	_, err = ctx.WriteString("password updated")
+	if err != nil {
+		return
+	}
+}
