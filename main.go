@@ -1,35 +1,58 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
-	"log"
+	"context"
+	"github.com/kataras/iris/v12"
 	"os"
 )
 
-func main() {
+var ctx = context.Background()
+var pepper = os.Getenv("PEPPER")
+var jwtKey = []byte(os.Getenv("JWT_SECRET"))
 
-	err3 := godotenv.Load()
-	if err3 != nil {
-		log.Fatal("Error loading .env file")
-	}
-
-	redisURI := os.Getenv("REDIS_URI")
-
-	addr, err2 := redis.ParseURL(redisURI)
-	if err2 != nil {
-		log.Fatal(err2)
-	}
-
-	r := gin.Default()
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "pong",
-		})
-	})
-	err3 = r.Run()
-	if err3 != nil {
+func init() {
+	err := loadEnv()
+	if err != nil {
 		return
 	}
+	connectToDatabase()
+}
+
+func main() {
+	app := newApp()
+
+	err := app.Listen(":8080")
+	if err != nil {
+		return
+	}
+}
+
+func newApp() *iris.Application {
+	app := iris.Default()
+
+	// test handlers (will be dropped soon)
+	app.Post("/hello-world", helloWorldTest)
+	app.Post("/redis-test", redisTest)
+	app.Get("/protected", authMiddleware, func(ctx iris.Context) {
+		_, err := ctx.WriteString("You accessed the protected route")
+		if err != nil {
+			return
+		}
+	})
+
+	// user handlers
+	user := app.Party("/user")
+	{
+		user.Post("/register", handleUserRegistration)
+		user.Post("/login", handleLogin)
+	}
+	authenticatedUser := app.Party("/user")
+	authenticatedUser.Use(authMiddleware)
+	{
+		// update username, password, drop user, etc
+		authenticatedUser.Put("/update-password", handleUpdatePassword)
+		authenticatedUser.Put("/update-username", handleUpdateUsername)
+	}
+
+	return app
 }
