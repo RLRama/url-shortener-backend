@@ -51,6 +51,7 @@ func newApp() *iris.Application {
 	{
 		// update username, password, drop user, etc
 		authenticatedUser.Put("/update-password", handleUpdatePassword)
+		authenticatedUser.Put("/update-username", handleUpdateUsername)
 	}
 
 	return app

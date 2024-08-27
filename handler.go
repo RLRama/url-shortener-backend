@@ -224,3 +224,70 @@ func handleUpdatePassword(ctx iris.Context) {
 		return
 	}
 }
+
+func handleUpdateUsername(ctx iris.Context) {
+	user, err := getUserFromContext(ctx)
+	if err != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err)
+		return
+	}
+
+	var req UsernameUpdateRequest
+	if err := ctx.ReadJSON(&req); err != nil {
+		ctx.StopWithError(iris.StatusBadRequest, err)
+		return
+	}
+
+	if !verifyPassword(req.Password, user.Password) {
+		ctx.StopWithStatus(iris.StatusUnauthorized)
+		_, err2 := ctx.WriteString("invalid current password")
+		if err2 != nil {
+			return
+		}
+		return
+	}
+
+	if err2 := validateFieldLength(req.NewUsername, "new_username", 3, 50); err2 != nil {
+		ctx.StopWithError(iris.StatusBadRequest, err2)
+		return
+	}
+
+	exists, err2 := checkUsernameExists(req.NewUsername)
+	if err2 != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err2)
+		return
+	}
+	if exists {
+		ctx.StopWithStatus(iris.StatusConflict)
+		_, err2 := ctx.WriteString("username already exists")
+		if err2 != nil {
+			return
+		}
+		return
+	}
+
+	now := time.Now().UTC()
+	userKey := fmt.Sprintf("user:%d", user.ID)
+	_, err2 = rdb.HSet(ctx, userKey,
+		"username", req.NewUsername,
+		"updated_at", now.Format(time.RFC3339)).Result()
+	if err2 != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err2)
+		return
+	}
+
+	newToken, err2 := generateToken(req.NewUsername)
+	if err2 != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err2)
+		return
+	}
+
+	ctx.StatusCode(iris.StatusOK)
+	err3 := ctx.JSON(iris.Map{
+		"message": "username updated",
+		"token":   newToken,
+	})
+	if err3 != nil {
+		return
+	}
+}

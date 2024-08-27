@@ -37,6 +37,12 @@ type PasswordUpdateRequest struct {
 	NewPassword     string `json:"new_password" binding:"required"`
 }
 
+// UsernameUpdateRequest for changing a user's username
+type UsernameUpdateRequest struct {
+	NewUsername string `json:"new_username" binding:"required"`
+	Password    string `json:"password" binding:"required"`
+}
+
 // Claims Login claims struct
 type Claims struct {
 	Username string `json:"username"`
