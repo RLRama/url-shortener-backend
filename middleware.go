@@ -5,17 +5,15 @@ import (
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/kataras/iris/v12"
-	"strings"
+	"time"
 )
 
 func authMiddleware(ctx iris.Context) {
-	tokenString := ctx.GetHeader("Authorization")
+	tokenString := ctx.GetCookie("auth_token")
 	if tokenString == "" {
 		ctx.StopWithStatus(iris.StatusUnauthorized)
 		return
 	}
-
-	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
 
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -71,6 +69,16 @@ func authMiddleware(ctx iris.Context) {
 		ctx.StopWithError(iris.StatusInternalServerError, err4)
 		return
 	}
+
+	ctx.SetCookie(&iris.Cookie{
+		Name:     "auth_token",
+		Value:    newToken,
+		MaxAge:   int(time.Hour * 24 * 7 / time.Second), // 1 week
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: iris.SameSiteLaxMode,
+	})
 
 	ctx.Header("New-Token", newToken)
 	ctx.Next()

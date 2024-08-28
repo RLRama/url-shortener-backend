@@ -151,11 +151,45 @@ func handleLogin(ctx iris.Context) {
 		return
 	}
 
+	ctx.SetCookie(&iris.Cookie{
+		Name:     "auth_token",
+		Value:    token,
+		MaxAge:   int(time.Hour * 24 * 7 / time.Second), // 1 week
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: iris.SameSiteLaxMode,
+	})
+
 	ctx.StatusCode(iris.StatusOK)
 	err3 := ctx.JSON(iris.Map{
-		"token": token,
+		"token":   token,
+		"message": "login successful",
 	})
 	if err3 != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err3)
+		return
+	}
+}
+
+func handleLogout(ctx iris.Context) {
+	ctx.SetCookie(&iris.Cookie{
+		Name:     "auth_token",
+		Value:    "",
+		MaxAge:   -1,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: iris.SameSiteLaxMode,
+		Expires:  time.Now().Add(-1 * time.Hour),
+	})
+
+	ctx.StatusCode(iris.StatusOK)
+	err := ctx.JSON(iris.Map{
+		"message": "logout successful",
+	})
+	if err != nil {
+		ctx.StopWithError(iris.StatusInternalServerError, err)
 		return
 	}
 }
